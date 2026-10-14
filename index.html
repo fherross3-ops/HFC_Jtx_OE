@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard · HFC</title>
+<style>
+    *{margin:0;padding:0;box-sizing:border-box;font-family:'Inter',system-ui,sans-serif;}
+    body{background:#0a0e17;color:#e0e6ed;min-height:100vh;padding:12px;}
+    .dashboard{max-width:1600px;margin:0 auto;display:flex;flex-direction:column;gap:10px;
+        background:linear-gradient(145deg,#0f1a2b,#07101a);border-radius:16px;padding:16px 20px;
+        border:1px solid #1e3347;box-shadow:0 8px 40px rgba(0,0,0,.6);}
+    .header{display:flex;justify-content:space-between;align-items:center;
+        padding-bottom:10px;border-bottom:1px solid #1e3347;flex-wrap:wrap;gap:8px;}
+    .header h1{font-size:1.2rem;background:linear-gradient(90deg,#4fc3f7,#00e676);
+        -webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+    .fecha-destacada{background:#1b3a4b;color:#4fc3f7;padding:3px 14px;border-radius:60px;
+        font-size:.8rem;font-weight:700;-webkit-text-fill-color:#4fc3f7;}
+    select{background:#1b3a4b;color:#4fc3f7;border:1px solid #2a5a7a;padding:4px 10px;
+        border-radius:30px;font-size:.8rem;font-weight:700;cursor:pointer;outline:none;}
+    .tabs{display:flex;gap:4px;background:#0f1a2b;padding:4px;border-radius:12px;
+        border:1px solid #1e3347;flex-wrap:wrap;}
+    .tab-btn{padding:8px 18px;border:none;background:transparent;border-radius:8px;
+        font-weight:600;font-size:.8rem;color:#78909c;cursor:pointer;transition:all .2s;}
+    .tab-btn.active{background:#1b3a4b;color:#4fc3f7;box-shadow:0 2px 8px rgba(79,195,247,.15);}
+    .tab-content{display:none;}
+    .tab-content.active{display:block;}
+    .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-bottom:12px;}
+    .kpi{background:#0f1a2b;padding:12px 14px;border-radius:10px;
+        border:1px solid #1e3347;border-left:3px solid #4fc3f7;}
+    .kpi:nth-child(2){border-left-color:#00e676;}
+    .kpi:nth-child(3){border-left-color:#ffb74d;}
+    .kpi:nth-child(4){border-left-color:#f06292;}
+    .kpi-label{font-size:.6rem;text-transform:uppercase;letter-spacing:.05em;
+        color:#78909c;font-weight:700;}
+    .kpi-value{font-size:1.4rem;font-weight:700;color:#4fc3f7;line-height:1.2;margin-top:4px;}
+    .kpi-value.green{color:#00e676;}
+    .kpi-value.orange{color:#ffb74d;}
+    .kpi-value.pink{color:#f06292;}
+    table{width:100%;border-collapse:collapse;font-size:.8rem;background:#0a121c;border-radius:10px;overflow:hidden;}
+    th{background:#0f1a2b;color:#78909c;padding:10px;text-align:center;
+        border-bottom:2px solid #1e3347;font-size:.7rem;text-transform:uppercase;}
+    td{padding:8px 10px;text-align:center;border-bottom:1px solid #142230;color:#b0bec5;}
+    tr:hover td{background:#142230;}
+    .nombre-col{font-weight:600;color:#4fc3f7;text-align:left;}
+    .loading{position:fixed;inset:0;background:rgba(10,14,23,.92);display:flex;
+        justify-content:center;align-items:center;flex-direction:column;gap:14px;z-index:9999;}
+    .loading.hidden{display:none;}
+    .spinner{width:44px;height:44px;border:4px solid #1e3347;border-top-color:#4fc3f7;
+        border-radius:50%;animation:spin 1s linear infinite;}
+    @keyframes spin{to{transform:rotate(360deg);}}
+    .error{background:#3a0f1a;border:1px solid #f06292;border-radius:10px;
+        padding:12px 16px;color:#f06292;font-size:.8rem;margin-bottom:8px;display:none;}
+    .error.visible{display:block;}
+</style>
+</head>
+<body>
+
+<div class="loading" id="loading">
+    <div class="spinner"></div>
+    <div id="loadingText" style="color:#4fc3f7;font-weight:700;">Iniciando…</div>
+</div>
+
+<div class="dashboard">
+    <div class="header">
+        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+            <h1>🏭 HFC · Open End</h1>
+            <span class="fecha-destacada" id="fechaMostrada">—</span>
+            <select id="fechaSelect"><option>Cargando…</option></select>
+            <select id="carpetaSelect" style="display:none;"><option></option></select>
+        </div>
+        <div id="fileStatus" style="font-size:.7rem;color:#90aae4;">Iniciando…</div>
+    </div>
+
+    <div class="tabs">
+        <button class="tab-btn active" data-tab="global">📊 Global</button>
+        <button class="tab-btn" data-tab="maquinas">🏭 Máquinas</button>
+        <button class="tab-btn" data-tab="turnos">⏰ Turnos</button>
+        <button class="tab-btn" data-tab="calidad">🔬 Calidad</button>
+        <button class="tab-btn" data-tab="operadores">👤 Operadores</button>
+        <button class="tab-btn" data-tab="tiempos">⏱️ Tiempos</button>
+    </div>
+
+    <div class="error" id="errorPanel"></div>
+
+    <!-- GLOBAL -->
+    <div class="tab-content active" id="tab-global">
+        <div class="kpis">
+            <div class="kpi"><div class="kpi-label">Kgs Total Día</div><div class="kpi-value" id="kpiKgs">-</div></div>
+            <div class="kpi"><div class="kpi-label">Eficiencia Prom.</div><div class="kpi-value green" id="kpiEfic">-</div></div>
+            <div class="kpi"><div class="kpi-label">Máquinas Activas</div><div class="kpi-value orange" id="kpiMaqs">-</div></div>
+            <div class="kpi"><div class="kpi-label">Tiempo Perdido</div><div class="kpi-value pink" id="kpiTP">-</div></div>
+        </div>
+        <table>
+            <thead><tr>
+                <th>Máquina</th><th>Ne</th><th>Tipo</th><th>Husos</th>
+                <th>Kgs Total</th><th>Efic Total</th><th>Husos Inact.</th>
+            </tr></thead>
+            <tbody id="tbodyGlobal"></tbody>
+        </table>
+    </div>
+
+    <!-- MAQUINAS -->
+    <div class="tab-content" id="tab-maquinas">
+        <div class="kpis">
+            <div class="kpi"><div class="kpi-label">Máquinas Activas</div><div class="kpi-value" id="kpiMaqAct">-</div></div>
+            <div class="kpi"><div class="kpi-label">Kgs 1er Turno</div><div class="kpi-value green" id="kpiT1">-</div></div>
+            <div class="kpi"><div class="kpi-label">Kgs 2do Turno</div><div class="kpi-value orange" id="kpiT2">-</div></div>
+            <div class="kpi"><div class="kpi-label">Kgs 3er Turno</div><div class="kpi-value pink" id="kpiT3">-</div></div>
+        </div>
+        <table>
+            <thead><tr>
+                <th>Máquina</th>
+                <th>Kgs T1</th><th>Efic T1</th>
+                <th>Kgs T2</th><th>Efic T2</th>
+                <th>Kgs T3</th><th>Efic T3</th>
+                <th>Total</th>
+            </tr></thead>
+            <tbody id="tbodyMaquinas"></tbody>
+        </table>
+    </div>
+
+    <!-- TURNOS -->
+    <div class="tab-content" id="tab-turnos">
+        <div class="kpis">
+            <div class="kpi"><div class="kpi-label">Efic 1er Turno</div><div class="kpi-value green" id="kpiEfic1">-</div></div>
+            <div class="kpi"><div class="kpi-label">Efic 2do Turno</div><div class="kpi-value green" id="kpiEfic2">-</div></div>
+            <div class="kpi"><div class="kpi-label">Efic 3er Turno</div><div class="kpi-value green" id="kpiEfic3">-</div></div>
+            <div class="kpi"><div class="kpi-label">Efic Global</div><div class="kpi-value orange" id="kpiEficGlobal">-</div></div>
+        </div>
+        <table>
+            <thead><tr>
+                <th>Turno</th><th>Kgs Producidos</th><th>Eficiencia Prom.</th><th>Máquinas Activas</th>
+            </tr></thead>
+            <tbody id="tbodyTurnos"></tbody>
+        </table>
+    </div>
+
+    <!-- CALIDAD (CSV Sisgo) -->
+    <div class="tab-content" id="tab-calidad">
+        <div class="kpis">
+            <div class="kpi"><div class="kpi-label">Registros CSV</div><div class="kpi-value" id="kpiCalidadRegs">-</div></div>
+            <div class="kpi"><div class="kpi-label">Neps Prom.</div><div class="kpi-value orange" id="kpiCalidadNeps">-</div></div>
+            <div class="kpi"><div class="kpi-label">% CV Prom.</div><div class="kpi-value green" id="kpiCalidadCV">-</div></div>
+            <div class="kpi"><div class="kpi-label">Velocidad Prom.</div><div class="kpi-value pink" id="kpiCalidadVel">-</div></div>
+        </div>
+        <table>
+            <thead><tr>
+                <th>Máquina</th><th>Turno</th><th style="text-align:left;">Persona</th>
+                <th>Titulo</th><th>Tipo</th><th>Husos</th>
+                <th>% CV</th><th>Neps</th><th>P. Gruesas</th><th>P. Delgadas</th>
+                <th>Velocidad</th><th>Kgs</th>
+            </tr></thead>
+            <tbody id="tbodyCalidad"></tbody>
+        </table>
+    </div>
+
+    <!-- OPERADORES (CSV Sisgo agregado) -->
+    <div class="tab-content" id="tab-operadores">
+        <div class="kpis">
+            <div class="kpi"><div class="kpi-label">Operarios</div><div class="kpi-value" id="kpiOpTotal">-</div></div>
+            <div class="kpi"><div class="kpi-label">Kgs Totales</div><div class="kpi-value green" id="kpiOpKgs">-</div></div>
+            <div class="kpi"><div class="kpi-label">Máq. más activa</div><div class="kpi-value orange" id="kpiOpMaqTop" style="font-size:.9rem;">-</div></div>
+            <div class="kpi"><div class="kpi-label">Turno más prod.</div><div class="kpi-value pink" id="kpiOpTurnoTop" style="font-size:.9rem;">-</div></div>
+        </div>
+        <table>
+            <thead><tr>
+                <th style="text-align:left;">Operario</th>
+                <th>Turnos</th><th>Máquinas</th>
+                <th>Kgs Totales</th><th>Vel. Prom.</th>
+                <th>Neps Prom.</th><th>% CV Prom.</th>
+                <th>Kgs / Turno</th>
+            </tr></thead>
+            <tbody id="tbodyOperadores"></tbody>
+        </table>
+    </div>
+
+    <!-- TIEMPOS -->
+    <div class="tab-content" id="tab-tiempos">
+        <div class="kpis">
+            <div class="kpi"><div class="kpi-label">Total Horas</div><div class="kpi-value pink" id="kpiTpTotal">-</div></div>
+            <div class="kpi"><div class="kpi-label">Causas</div><div class="kpi-value orange" id="kpiTpCausas">-</div></div>
+            <div class="kpi"><div class="kpi-label">Causa Top</div><div class="kpi-value" id="kpiTpTop" style="font-size:.9rem;">-</div></div>
+            <div class="kpi"><div class="kpi-label">Máq. Afectadas</div><div class="kpi-value" id="kpiTpMaqs">-</div></div>
+        </div>
+        <table>
+            <thead><tr>
+                <th>Máquina</th><th>Item</th><th>Código</th><th style="text-align:left;">Causa</th>
+                <th>Horas</th><th>% Tiempo</th>
+            </tr></thead>
+            <tbody id="tbodyTiempos"></tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+const DATA_PATH = 'data/raw/';
+const SUBPATH_CVSS = 'cvss/';
+const EXT = '.csv';
+
+let INDEX = null;
+let CARPETA_ACTUAL = null;
+let produccionData = [];
+let tiemposData = [];
+let sisgoData = [];
+
+const $ = id => document.getElementById(id);
+
+// ============ PARSER CSV ============
+function parseCSV(text) {
+    if (!text) return [];
+    text = text.replace(/^\uFEFF+/, '');
+    const lines = text.split(/\r?\n/).filter(l => l.trim() !== '');
+    if (lines.length < 2) return [];
+    const delim = (lines[0].match(/;/g)||[]).length > (lines[0].match(/,/g)||[]).length ? ';' : ',';
+    const parseLinea = l => {
+        const out = []; let cur = '', inQ = false;
+        for (let i = 0; i < l.length; i++) {
+            const c = l[i];
+            if (inQ) {
+                if (c === '"') { if (l[i+1] === '"') { cur+='"'; i++; } else inQ = false; }
+                else cur += c;
+            } else {
+                if (c === '"') inQ = true;
+                else if (c === delim) { out.push(cur); cur = ''; }
+                else cur += c;
+            }
+        }
+        out.push(cur);
+        return out.map(v => v.trim());
+    };
+    const headers = parseLinea(lines[0]);
+    const result = [];
+    for (let i = 1; i < lines.length; i++) {
+        const vals = parseLinea(lines[i]);
+        const obj = {};
+        headers.forEach((h, idx) => { obj[h] = vals[idx] ?? ''; });
+        result.push(obj);
+    }
+    return result;
+}
+
+const num = v => parseFloat(String(v||'0').replace(/[^\d.-]/g,'')) || 0;
+const fechaStr = f => f && f.length === 8 ? `${f.slice(6,8)}/${f.slice(4,6)}/${f.slice(0,4)}` : f;
+
+function normalizarFechaCSV(s) {
+    if (!s) return '';
+    if (/^\d{8}$/.test(s)) return s;
+    const p = s.split('/');
+    if (p.length === 3) {
+        let [d, m, y] = p;
+        if (y.length === 2) y = '20' + y;
+        return `${y}${m.padStart(2,'0')}${d.padStart(2,'0')}`;
+    }
+    return s;
+}
+
+// ============ CARGA INDEX ============
+async function cargarIndex() {
+    const r = await fetch(DATA_PATH + 'index.json?t=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) throw new Error('No se encontró data/raw/index.json');
+    INDEX = await r.json();
+    if (!INDEX.carpetas || !INDEX.carpetas.length) {
+        throw new Error('index.json está vacío — corre crear_cvss_hfc.py');
+    }
+    return [...INDEX.carpetas].sort((a, b) => b.rango.localeCompare(a.rango));
+}
+
+// ============ CARGA DATOS ============
+async function cargarFecha(fecha, carpeta = null) {
+    if (carpeta) CARPETA_ACTUAL = carpeta;
+    if (!CARPETA_ACTUAL) return;
+    const base = `${DATA_PATH}${CARPETA_ACTUAL.nombre}/`;
+
+    $('fileStatus').textContent = `Cargando ${fechaStr(fecha)}…`;
+
+    try {
+        const r = await fetch(`${base}${SUBPATH_CVSS}produccion_hfc_${fecha}${EXT}`, { cache:'no-store' });
+        produccionData = r.ok ? parseCSV(await r.text()) : [];
+    } catch { produccionData = []; }
+
+    try {
+        const r = await fetch(`${base}${SUBPATH_CVSS}tiempos_perdidos_hfc_${fecha}${EXT}`, { cache:'no-store' });
+        tiemposData = r.ok ? parseCSV(await r.text()) : [];
+    } catch { tiemposData = []; }
+
+    // CSV de Sisgo
+    sisgoData = [];
+    if (CARPETA_ACTUAL.sisgo_csv) {
+        try {
+            const r = await fetch(`${base}${CARPETA_ACTUAL.sisgo_csv}?t=${Date.now()}`, { cache:'no-store' });
+            if (r.ok) sisgoData = parseCSV(await r.text());
+        } catch {}
+    }
+
+    $('fileStatus').textContent =
+        `Prod: ${produccionData.length} | Tiempos: ${tiemposData.length} | Sisgo: ${sisgoData.length}`;
+    $('fechaMostrada').textContent = fechaStr(fecha);
+    render(fecha);
+}
+
+// ============ RENDER ============
+function render(fecha) {
+    renderGlobal();
+    renderMaquinas();
+    renderTurnos();
+    renderCalidad(fecha);
+    renderOperadores(fecha);
+    renderTiempos();
+}
+
+function renderGlobal() {
+    const totalKgs = produccionData.reduce((s,r) => s + num(r['Kgs Total']), 0);
+    const activas = produccionData.filter(r => num(r['Kgs Total']) > 0).length;
+    const efics = produccionData.map(r => num(r['Efic Total (%)'])).filter(x => x > 0);
+    const eficProm = efics.length ? efics.reduce((a,b) => a+b, 0) / efics.length : 0;
+    const tp = tiemposData.reduce((s,r) => s + num(r['Horas']), 0);
+
+    $('kpiKgs').textContent = totalKgs.toLocaleString('es-ES', {maximumFractionDigits: 2});
+    $('kpiEfic').textContent = eficProm.toFixed(1) + '%';
+    $('kpiMaqs').textContent = `${activas}/${produccionData.length}`;
+    $('kpiTP').textContent = tp.toFixed(2) + 'h';
+
+    $('tbodyGlobal').innerHTML = produccionData.map(r => `
+        <tr>
+            <td class="nombre-col">${r.Maquina}</td>
+            <td>${r.Ne}</td>
+            <td>${r.Tipo}</td>
+            <td>${r.Husos}</td>
+            <td>${num(r['Kgs Total']).toLocaleString('es-ES',{maximumFractionDigits:2})}</td>
+            <td style="color:#00e676;font-weight:700;">${num(r['Efic Total (%)']).toFixed(1)}%</td>
+            <td>${r['Husos Inactivos']}</td>
+        </tr>`).join('');
+}
+
+function renderMaquinas() {
+    const t1 = produccionData.reduce((s,r) => s + num(r['Kgs 1er Turno']), 0);
+    const t2 = produccionData.reduce((s,r) => s + num(r['Kgs 2do Turno']), 0);
+    const t3 = produccionData.reduce((s,r) => s + num(r['Kgs 3er Turno']), 0);
+
+    $('kpiMaqAct').textContent = produccionData.filter(r => num(r['Kgs Total']) > 0).length;
+    $('kpiT1').textContent = t1.toLocaleString('es-ES',{maximumFractionDigits:2});
+    $('kpiT2').textContent = t2.toLocaleString('es-ES',{maximumFractionDigits:2});
+    $('kpiT3').textContent = t3.toLocaleString('es-ES',{maximumFractionDigits:2});
+
+    $('tbodyMaquinas').innerHTML = produccionData.map(r => `
+        <tr>
+            <td class="nombre-col">${r.Maquina}</td>
+            <td>${num(r['Kgs 1er Turno']).toLocaleString('es-ES',{maximumFractionDigits:2})}</td>
+            <td style="color:#00e676;">${num(r['Efic 1er Turno (%)']).toFixed(1)}%</td>
+            <td>${num(r['Kgs 2do Turno']).toLocaleString('es-ES',{maximumFractionDigits:2})}</td>
+            <td style="color:#00e676;">${num(r['Efic 2do Turno (%)']).toFixed(1)}%</td>
+            <td>${num(r['Kgs 3er Turno']).toLocaleString('es-ES',{maximumFractionDigits:2})}</td>
+            <td style="color:#00e676;">${num(r['Efic 3er Turno (%)']).toFixed(1)}%</td>
+            <td style="color:#4fc3f7;font-weight:700;">${num(r['Kgs Total']).toLocaleString('es-ES',{maximumFractionDigits:2})}</td>
+        </tr>`).join('');
+}
+
+function renderTurnos() {
+    const turnos = ['1er', '2do', '3er'];
+    const totales = turnos.map(t => ({
+        turno: t,
+        kgs: produccionData.reduce((s,r) => s + num(r[`Kgs ${t} Turno`]), 0),
+        efics: produccionData.map(r => num(r[`Efic ${t} Turno (%)`])).filter(x => x > 0),
+        activas: produccionData.filter(r => num(r[`Kgs ${t} Turno`]) > 0).length,
+    }));
+
+    $('kpiEfic1').textContent = totales[0].efics.length
+        ? (totales[0].efics.reduce((a,b)=>a+b,0)/totales[0].efics.length).toFixed(1) + '%' : '-';
+    $('kpiEfic2').textContent = totales[1].efics.length
+        ? (totales[1].efics.reduce((a,b)=>a+b,0)/totales[1].efics.length).toFixed(1) + '%' : '-';
+    $('kpiEfic3').textContent = totales[2].efics.length
+        ? (totales[2].efics.reduce((a,b)=>a+b,0)/totales[2].efics.length).toFixed(1) + '%' : '-';
+
+    const totEfics = produccionData.map(r => num(r['Efic Total (%)'])).filter(x => x > 0);
+    const eficGlobal = totEfics.length ? totEfics.reduce((a,b)=>a+b,0)/totEfics.length : 0;
+    $('kpiEficGlobal').textContent = eficGlobal.toFixed(1) + '%';
+
+    $('tbodyTurnos').innerHTML = totales.map(t => `
+        <tr>
+            <td class="nombre-col">${t.turno} Turno</td>
+            <td>${t.kgs.toLocaleString('es-ES',{maximumFractionDigits:2})}</td>
+            <td style="color:#00e676;font-weight:700;">
+                ${t.efics.length ? (t.efics.reduce((a,b)=>a+b,0)/t.efics.length).toFixed(1) : '0.0'}%
+            </td>
+            <td>${t.activas}</td>
+        </tr>`).join('');
+}
+
+function renderCalidad(fecha) {
+    const delDia = sisgoData.filter(r => normalizarFechaCSV(r.fecha) === fecha);
+    $('kpiCalidadRegs').textContent = delDia.length;
+
+    if (!delDia.length) {
+        $('tbodyCalidad').innerHTML = `<tr><td colspan="12" style="text-align:center;padding:30px;color:#78909c;">Sin datos para esta fecha</td></tr>`;
+        ['kpiCalidadNeps','kpiCalidadCV','kpiCalidadVel'].forEach(id => $(id).textContent = '-');
+        return;
+    }
+    const neps = delDia.map(r => num(r['Neps'])).filter(x => x > 0);
+    const cvs = delDia.map(r => num(r['% CV'])).filter(x => x > 0);
+    const vels = delDia.map(r => num(r['Velocidad (mt/min)'])).filter(x => x > 0);
+    const avg = a => a.length ? a.reduce((x,y)=>x+y,0)/a.length : 0;
+
+    $('kpiCalidadNeps').textContent = avg(neps).toFixed(1);
+    $('kpiCalidadCV').textContent = avg(cvs).toFixed(2);
+    $('kpiCalidadVel').textContent = avg(vels).toFixed(1);
+
+    $('tbodyCalidad').innerHTML = delDia.map(r => `
+        <tr>
+            <td class="nombre-col">${r.Maquina}</td>
+            <td>${r.Turno}</td>
+            <td style="text-align:left;">${r.Persona}</td>
+            <td>${r.Titulo}</td>
+            <td>${r.Tipo}</td>
+            <td>${r.Husos}</td>
+            <td>${r['% CV']}</td>
+            <td>${r.Neps}</td>
+            <td>${r['P. Gruesas']}</td>
+            <td>${r['P. Delgadas']}</td>
+            <td>${r['Velocidad (mt/min)']}</td>
+            <td style="color:#4fc3f7;font-weight:700;">${r['Kgs Producidos']}</td>
+        </tr>`).join('');
+}
+
+function renderOperadores(fecha) {
+    if (!sisgoData.length) {
+        $('tbodyOperadores').innerHTML = `<tr><td colspan="8" style="text-align:center;padding:30px;color:#78909c;">Sin CSV de Sisgo</td></tr>`;
+        ['kpiOpTotal','kpiOpKgs','kpiOpMaqTop','kpiOpTurnoTop'].forEach(id => $(id).textContent = '-');
+        return;
+    }
+    const porOp = {};
+    sisgoData.forEach(r => {
+        const p = r.Persona || '—';
+        if (!porOp[p]) porOp[p] = { turnos:new Set(), maqs:new Set(), kgs:0, vel:[], neps:[], cvs:[], n:0 };
+        const o = porOp[p];
+        o.turnos.add(r.Turno);
+        o.maqs.add(r.Maquina);
+        o.kgs += num(r['Kgs Producidos']);
+        if (num(r['Velocidad (mt/min)'])) o.vel.push(num(r['Velocidad (mt/min)']));
+        if (num(r['Neps'])) o.neps.push(num(r['Neps']));
+        if (num(r['% CV'])) o.cvs.push(num(r['% CV']));
+        o.n++;
+    });
+    const avg = a => a.length ? a.reduce((x,y)=>x+y,0)/a.length : 0;
+    const entries = Object.entries(porOp).sort((a,b) => b[1].kgs - a[1].kgs);
+
+    $('kpiOpTotal').textContent = entries.length;
+    $('kpiOpKgs').textContent = sisgoData.reduce((s,r) => s + num(r['Kgs Producidos']), 0).toLocaleString('es-ES',{maximumFractionDigits:0});
+
+    const porTurno = {};
+    sisgoData.forEach(r => { porTurno[r.Turno] = (porTurno[r.Turno]||0) + num(r['Kgs Producidos']); });
+    const turnoTop = Object.entries(porTurno).sort((a,b) => b[1]-a[1])[0];
+    if (turnoTop) $('kpiOpTurnoTop').textContent = turnoTop[0];
+
+    // Máquina más activa
+    const porMaq = {};
+    sisgoData.forEach(r => { porMaq[r.Maquina] = (porMaq[r.Maquina]||0) + num(r['Kgs Producidos']); });
+    const maqTop = Object.entries(porMaq).sort((a,b) => b[1]-a[1])[0];
+    if (maqTop) $('kpiOpMaqTop').textContent = maqTop[0];
+
+    $('tbodyOperadores').innerHTML = entries.map(([op, o]) => `
+        <tr>
+            <td class="nombre-col">${op}</td>
+            <td>${[...o.turnos].join(', ')}</td>
+            <td>${[...o.maqs].join(', ')}</td>
+            <td style="color:#4fc3f7;font-weight:700;">${o.kgs.toLocaleString('es-ES',{maximumFractionDigits:0})}</td>
+            <td>${avg(o.vel).toFixed(1)}</td>
+            <td>${avg(o.neps).toFixed(1)}</td>
+            <td>${avg(o.cvs).toFixed(2)}</td>
+            <td>${(o.kgs / o.n).toFixed(0)}</td>
+        </tr>`).join('');
+}
+
+function renderTiempos() {
+    const total = tiemposData.reduce((s,r) => s + num(r['Horas']), 0);
+    const causas = new Set(tiemposData.map(r => r.Causa));
+    const maqs = new Set(tiemposData.map(r => r.Maquina));
+    const causaCount = {};
+    tiemposData.forEach(r => {
+        causaCount[r.Causa] = (causaCount[r.Causa]||0) + num(r['Horas']);
+    });
+    let top = '-', topH = 0;
+    Object.entries(causaCount).forEach(([c,h]) => {
+        if (h > topH) { topH = h; top = c; }
+    });
+
+    $('kpiTpTotal').textContent = total.toFixed(2) + 'h';
+    $('kpiTpCausas').textContent = causas.size;
+    $('kpiTpTop').textContent = top;
+    $('kpiTpMaqs').textContent = maqs.size;
+
+    $('tbodyTiempos').innerHTML = tiemposData.map(r => `
+        <tr>
+            <td class="nombre-col">${r.Maquina}</td>
+            <td>${r.Item}</td>
+            <td>${r.Codigo}</td>
+            <td style="text-align:left;">${r.Causa}</td>
+            <td style="color:#f06292;font-weight:700;">${num(r['Horas']).toFixed(2)}</td>
+            <td>${num(r['% Tiempo Perdido']).toFixed(1)}%</td>
+        </tr>`).join('');
+}
+
+// ============ TABS ============
+document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+        const tab = this.dataset.tab;
+        document.querySelectorAll('.tab-content').forEach(tc => {
+            tc.classList.toggle('active', tc.id === `tab-${tab}`);
+        });
+    });
+});
+
+// ============ ARRANQUE ============
+async function arrancar() {
+    const overlay = $('loading');
+    try {
+        const carpetas = await cargarIndex();
+        CARPETA_ACTUAL = carpetas[0];
+
+        const fechas = [...new Set([
+            ...(CARPETA_ACTUAL.produccion || []),
+            ...(CARPETA_ACTUAL.tiempos_perdidos || []),
+        ])].sort((a, b) => b.localeCompare(a));
+
+        if (!fechas.length) {
+            overlay.classList.add('hidden');
+            $('errorPanel').innerHTML = `⚠️ La carpeta "${CARPETA_ACTUAL.nombre}" no tiene CSVs generados`;
+            $('errorPanel').classList.add('visible');
+            return;
+        }
+
+        $('fechaSelect').innerHTML = fechas.map(f =>
+            `<option value="${f}">${fechaStr(f)}</option>`).join('');
+        $('fechaSelect').value = fechas[0];
+
+        await cargarFecha(fechas[0], CARPETA_ACTUAL);
+        overlay.classList.add('hidden');
+
+        $('fechaSelect').addEventListener('change', async function() {
+            if (!this.value) return;
+            overlay.classList.remove('hidden');
+            await cargarFecha(this.value);
+            overlay.classList.add('hidden');
+        });
+    } catch (e) {
+        console.error(e);
+        overlay.classList.add('hidden');
+        $('errorPanel').innerHTML = '❌ ' + e.message;
+        $('errorPanel').classList.add('visible');
+    }
+}
+
+arrancar();
+</script>
+</body>
+</html>
