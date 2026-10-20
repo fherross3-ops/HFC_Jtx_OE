@@ -233,9 +233,9 @@ const ALIASES = {
   'P. Gruesas':         ['P Gruesas', 'Gruesas', 'PGruesas'],
   'P. Delgadas':        ['P Delgadas', 'Delgadas', 'PDelgadas'],
   '% Tiempo Perdido':   ['% Tiempo', 'Tiempo Perdido', 'Tiempo'],
-  'RxMHH Purgador':     ['Rx MHH Purgador','RxMHH-Purgador','Purgador RxMHH','Purgador Rx MHH','Purgador','Roturas Purgador','RxMHH_Purgador','rxmhh purgador'],
-  'RxMHH Naturales':    ['Rx MHH Naturales','RxMHH-Naturales','Naturales RxMHH','Naturales Rx MHH','Naturales','Roturas Naturales','RxMHH_Naturales','rxmhh naturales'],
-  'Husos Inactivos':    ['Husos Inact','Husos Inact.','HusosInactivos','Husos Inactivos'],
+  'RxMHH Purgador':     ['Rx MHH Purgador','RxMHH-Purgador','Purgador RxMHH','Purgador Rx MHH','Purgador','Roturas Purgador'],
+  'RxMHH Naturales':    ['Rx MHH Naturales','RxMHH-Naturales','Naturales RxMHH','Naturales Rx MHH','Naturales','Roturas Naturales'],
+  'Husos Inactivos':    ['Husos Inact','Husos Inact.','HusosInactivos'],
 };
 function campo(row, nombre) {
   if (!row) return '';
@@ -368,10 +368,42 @@ async function cargarFecha(fecha) {
 
 /* ---------- RENDER ---------- */
 function render(fecha) {
-  renderGlobal(); renderMaquinas(); renderTurnos();
+  renderGlobal(); renderMaquinas(fecha); renderTurnos();
   renderCalidad(fecha); renderOperadores(); renderTiempos();
 }
 
+/* ---------- TÍTULO reconstruido (Ne + Esp) ---------- */
+function tituloDe(prodRow) {
+  const t = campo(prodRow, 'Titulo');
+  if (t) return t;
+  const ne = String(campo(prodRow, 'Ne') || '').trim();
+  const esp = String(campo(prodRow, 'Esp') || '').trim();
+  return esp ? `${ne} ${esp}` : ne;
+}
+
+/* ---------- RxMHH: lee de Sisgo y suma los turnos ---------- */
+function rxDe(prodRow, campoNombre, fecha) {
+  // Si existiera en producción, se usa
+  const directo = campo(prodRow, campoNombre);
+  if (directo !== '' && directo !== undefined && directo !== null && directo !== '-') {
+    return directo;
+  }
+  const maq = String(campo(prodRow, 'Maquina') || '').trim();
+  const tipo = String(campo(prodRow, 'Tipo') || '').trim();
+  const titulo = tituloDe(prodRow);
+  const filas = sisgoData.filter(r => {
+    const f = normalizarFechaCSV(campo(r, 'fecha'));
+    return f === fecha
+        && String(campo(r, 'Maquina')).trim() === maq
+        && String(campo(r, 'Tipo')).trim() === tipo
+        && String(campo(r, 'Titulo')).trim() === titulo;
+  });
+  if (!filas.length) return '';
+  const total = filas.reduce((s, r) => s + num(campo(r, campoNombre)), 0);
+  return total.toLocaleString('es-ES', {maximumFractionDigits:2});
+}
+
+/* ---------- RENDER GLOBAL ---------- */
 function renderGlobal() {
   const totalKgs = produccionData.reduce((s,r) => s + num(campo(r,'Kgs Total')), 0);
   const activas  = produccionData.filter(r => num(campo(r,'Kgs Total')) > 0).length;
@@ -396,7 +428,8 @@ function renderGlobal() {
     </tr>`).join('') || filaVacia(7);
 }
 
-function renderMaquinas() {
+/* ---------- RENDER MAQUINAS (con RxMHH desde Sisgo) ---------- */
+function renderMaquinas(fecha) {
   const t1 = produccionData.reduce((s,r) => s + num(campo(r,'Kgs 1er Turno')), 0);
   const t2 = produccionData.reduce((s,r) => s + num(campo(r,'Kgs 2do Turno')), 0);
   const t3 = produccionData.reduce((s,r) => s + num(campo(r,'Kgs 3er Turno')), 0);
@@ -405,30 +438,14 @@ function renderMaquinas() {
   $('kpiT2').textContent = t2.toLocaleString('es-ES',{maximumFractionDigits:2});
   $('kpiT3').textContent = t3.toLocaleString('es-ES',{maximumFractionDigits:2});
 
-  // Lee RxMHH: primero del CSV de producción; si no existe, agrega desde Sisgo.
-  function rxDe(maquina, campoNombre) {
-    const prodRow = produccionData.find(r => campo(r,'Maquina') === maquina);
-    if (prodRow) {
-      const v = campo(prodRow, campoNombre);
-      if (v !== '' && v !== undefined && v !== null && v !== '-') return v;
-    }
-    const filas = sisgoData.filter(r => campo(r,'Maquina') === maquina);
-    if (!filas.length) return '';
-    const total = filas.reduce((s,r) => s + num(campo(r, campoNombre)), 0);
-    if (total === 0) return '';
-    return total.toLocaleString('es-ES', {maximumFractionDigits:2});
-  }
-
-  $('tbodyMaquinas').innerHTML = produccionData.map(r => {
-    const maq = campo(r,'Maquina');
-    return `
+  $('tbodyMaquinas').innerHTML = produccionData.map(r => `
     <tr>
-      <td class="nombre-col">${maq}</td>
-      <td>${campo(r,'Titulo')}</td>
+      <td class="nombre-col">${campo(r,'Maquina')}</td>
+      <td>${tituloDe(r)}</td>
       <td>${campo(r,'Tipo')}</td>
       <td>${campo(r,'Husos Inactivos')}</td>
-      <td>${rxDe(maq,'RxMHH Purgador')}</td>
-      <td>${rxDe(maq,'RxMHH Naturales')}</td>
+      <td>${rxDe(r,'RxMHH Purgador',fecha)}</td>
+      <td>${rxDe(r,'RxMHH Naturales',fecha)}</td>
       <td>${num(campo(r,'Kgs 1er Turno')).toLocaleString('es-ES',{maximumFractionDigits:2})}</td>
       <td style="color:#00e676;">${num(campo(r,'Efic 1er Turno (%)')).toFixed(1)}%</td>
       <td>${num(campo(r,'Kgs 2do Turno')).toLocaleString('es-ES',{maximumFractionDigits:2})}</td>
@@ -436,10 +453,10 @@ function renderMaquinas() {
       <td>${num(campo(r,'Kgs 3er Turno')).toLocaleString('es-ES',{maximumFractionDigits:2})}</td>
       <td style="color:#00e676;">${num(campo(r,'Efic 3er Turno (%)')).toFixed(1)}%</td>
       <td style="color:#4fc3f7;font-weight:700;">${num(campo(r,'Kgs Total')).toLocaleString('es-ES',{maximumFractionDigits:2})}</td>
-    </tr>`;
-  }).join('') || filaVacia(13);
+    </tr>`).join('') || filaVacia(13);
 }
 
+/* ---------- RENDER TURNOS ---------- */
 function renderTurnos() {
   const turnos = ['1er','2do','3er'];
   const totales = turnos.map(t => ({
@@ -463,6 +480,7 @@ function renderTurnos() {
     </tr>`).join('');
 }
 
+/* ---------- RENDER CALIDAD ---------- */
 function renderCalidad(fecha) {
   const delDia = sisgoData.filter(r => normalizarFechaCSV(campo(r,'fecha')) === fecha);
   $('kpiCalidadRegs').textContent = delDia.length;
@@ -495,6 +513,7 @@ function renderCalidad(fecha) {
     </tr>`).join('');
 }
 
+/* ---------- RENDER OPERADORES ---------- */
 function renderOperadores() {
   if (!sisgoData.length) {
     $('tbodyOperadores').innerHTML = `<tr><td colspan="8" style="text-align:center;padding:30px;color:#78909c;">Sin datos</td></tr>`;
@@ -544,6 +563,7 @@ function renderOperadores() {
     </tr>`).join('');
 }
 
+/* ---------- RENDER TIEMPOS ---------- */
 function renderTiempos() {
   const total = tiemposData.reduce((s,r) => s + num(campo(r,'Horas')), 0);
   const causas = new Set(tiemposData.map(r => campo(r,'Causa')));
