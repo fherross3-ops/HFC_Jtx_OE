@@ -52,10 +52,6 @@
   .spinner{width:44px;height:44px;border:4px solid #1e3347;border-top-color:#4fc3f7;
     border-radius:50%;animation:spin 1s linear infinite;}
   @keyframes spin{to{transform:rotate(360deg);}}
-  .error{background:#3a0f1a;border:1px solid #f06292;border-radius:10px;
-    padding:12px 16px;color:#f06292;font-size:.8rem;margin-bottom:8px;display:none;line-height:1.6;}
-  .error.visible{display:block;}
-  .error code{background:#0a0e17;padding:1px 5px;border-radius:4px;color:#ffb74d;font-size:.75rem;}
 </style>
 </head>
 <body>
@@ -85,8 +81,6 @@
     <button class="tab-btn" data-tab="operadores">👤 Operadores</button>
     <button class="tab-btn" data-tab="tiempos">⏱️ Tiempos</button>
   </div>
-
-  <div class="error" id="errorPanel"></div>
 
   <div class="tab-content active" id="tab-global">
     <div class="kpis">
@@ -208,7 +202,7 @@ function parseCSV(text) {
   return result;
 }
 
-/* ---------- NÚMEROS (acepta coma decimal) ---------- */
+/* ---------- NÚMEROS ---------- */
 function num(v) {
   if (typeof v === 'number') return v;
   let s = String(v ?? '').trim();
@@ -226,7 +220,7 @@ function num(v) {
   return isNaN(n) ? 0 : n;
 }
 
-/* ---------- ACCESO A COLUMNAS case-insensitive ---------- */
+/* ---------- COLUMNAS case-insensitive ---------- */
 const ALIASES = {
   'Velocidad (mt/min)': ['Velocidad', 'Velocidad (m/min)', 'Vel'],
   'Kgs Producidos':     ['Kgs', 'Produccion', 'Kg Producidos'],
@@ -272,7 +266,7 @@ function etiquetaCarpeta(c) {
   return `📁 ${c.nombre || r}`;
 }
 
-/* ---------- FETCH TOLERANTE (prueba varias rutas) ---------- */
+/* ---------- FETCH TOLERANTE ---------- */
 async function fetchFirst(urls) {
   for (const u of urls) {
     try {
@@ -290,17 +284,17 @@ async function fetchFirst(urls) {
 /* ---------- CARGA INDEX ---------- */
 async function cargarIndex() {
   const r = await fetch(DATA_PATH + 'index.json?t=' + Date.now(), { cache: 'no-store' });
-  if (!r.ok) throw new Error('No se encontró ' + DATA_PATH + 'index.json');
-  const data = await r.json();
-  if (!data.carpetas || !data.carpetas.length) throw new Error('index.json no tiene carpetas');
-  return [...data.carpetas].sort((a, b) => (b.rango || '').localeCompare(a.rango || ''));
+  if (!r.ok) return [];
+  try {
+    const data = await r.json();
+    if (!data.carpetas || !data.carpetas.length) return [];
+    return [...data.carpetas].sort((a, b) => (b.rango || '').localeCompare(a.rango || ''));
+  } catch { return []; }
 }
 
 /* ---------- CARGA UNA CARPETA ---------- */
 async function cargarCarpeta(carpeta) {
   CARPETA_ACTUAL = carpeta;
-  $('errorPanel').classList.remove('visible');
-
   const fechas = [...new Set([
     ...(carpeta.produccion || []),
     ...(carpeta.tiempos_perdidos || []),
@@ -309,11 +303,9 @@ async function cargarCarpeta(carpeta) {
   if (!fechas.length) {
     $('fechaSelect').innerHTML = '<option>Sin fechas</option>';
     $('fechaMostrada').textContent = '—';
-    $('fileStatus').textContent = `Carpeta "${carpeta.nombre}" sin fechas en index.json`;
+    $('fileStatus').textContent = `Carpeta "${carpeta.nombre}" sin fechas`;
     produccionData = []; tiemposData = []; sisgoData = [];
     render('');
-    $('errorPanel').innerHTML = `⚠️ La carpeta <code>${carpeta.nombre}</code> no tiene fechas en <code>index.json</code>.`;
-    $('errorPanel').classList.add('visible');
     return;
   }
 
@@ -330,7 +322,6 @@ async function cargarFecha(fecha) {
   const base = `${DATA_PATH}${CARPETA_ACTUAL.nombre}/`;
 
   $('fileStatus').textContent = `Cargando ${fechaStr(fecha)}…`;
-  $('errorPanel').classList.remove('visible');
 
   const prodText = await fetchFirst([
     `${base}cvss/produccion_hfc_${fecha}${EXT}`,
@@ -360,12 +351,6 @@ async function cargarFecha(fecha) {
 
   $('fileStatus').textContent =
     `Prod: ${produccionData.length} | Tiempos: ${tiemposData.length} | Sisgo: ${sisgoData.length}`;
-
-  if (!produccionData.length && !tiemposData.length && !sisgoData.length) {
-    $('errorPanel').innerHTML =
-      `⚠️ <b>No se cargó ningún CSV</b> para ${fechaStr(fecha)} en <code>${CARPETA_ACTUAL.nombre}</code>.`;
-    $('errorPanel').classList.add('visible');
-  }
 
   $('fechaMostrada').textContent = fechaStr(fecha);
   render(fecha);
@@ -449,7 +434,7 @@ function renderCalidad(fecha) {
   const delDia = sisgoData.filter(r => normalizarFechaCSV(campo(r,'fecha')) === fecha);
   $('kpiCalidadRegs').textContent = delDia.length;
   if (!delDia.length) {
-    $('tbodyCalidad').innerHTML = `<tr><td colspan="12" style="text-align:center;padding:30px;color:#78909c;">Sin datos de Sisgo para esta fecha</td></tr>`;
+    $('tbodyCalidad').innerHTML = `<tr><td colspan="12" style="text-align:center;padding:30px;color:#78909c;">Sin datos para esta fecha</td></tr>`;
     ['kpiCalidadNeps','kpiCalidadCV','kpiCalidadVel'].forEach(id => $(id).textContent = '-');
     return;
   }
@@ -479,7 +464,7 @@ function renderCalidad(fecha) {
 
 function renderOperadores() {
   if (!sisgoData.length) {
-    $('tbodyOperadores').innerHTML = `<tr><td colspan="8" style="text-align:center;padding:30px;color:#78909c;">Sin CSV de Sisgo en esta carpeta</td></tr>`;
+    $('tbodyOperadores').innerHTML = `<tr><td colspan="8" style="text-align:center;padding:30px;color:#78909c;">Sin datos</td></tr>`;
     ['kpiOpTotal','kpiOpKgs','kpiOpMaqTop','kpiOpTurnoTop'].forEach(id => $(id).textContent = '-');
     return;
   }
@@ -576,6 +561,14 @@ async function arrancar() {
   try {
     CARPETAS = await cargarIndex();
 
+    if (!CARPETAS.length) {
+      $('carpetaSelect').innerHTML = '<option>Sin carpetas</option>';
+      $('fechaSelect').innerHTML = '<option>Sin fechas</option>';
+      $('fileStatus').textContent = 'Sin datos';
+      overlay.classList.add('hidden');
+      return;
+    }
+
     $('carpetaSelect').innerHTML = CARPETAS.map((c, i) =>
       `<option value="${i}">${etiquetaCarpeta(c)}</option>`).join('');
     $('carpetaSelect').value = '0';
@@ -608,8 +601,6 @@ async function arrancar() {
   } catch (e) {
     console.error(e);
     overlay.classList.add('hidden');
-    $('errorPanel').innerHTML = '❌ ' + e.message;
-    $('errorPanel').classList.add('visible');
   }
 }
 
