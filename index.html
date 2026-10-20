@@ -207,7 +207,7 @@ function parseCSV(text) {
   return result;
 }
 
-/* ---------- NÚMEROS (acepta coma decimal) ---------- */
+/* ---------- NÚMEROS ---------- */
 function num(v) {
   if (typeof v === 'number') return v;
   let s = String(v ?? '').trim();
@@ -225,7 +225,7 @@ function num(v) {
   return isNaN(n) ? 0 : n;
 }
 
-/* ---------- ACCESO A COLUMNAS (sin tildes, case-insensitive) ---------- */
+/* ---------- COLUMNAS case-insensitive, sin tildes ---------- */
 const ALIASES = {
   'Velocidad (mt/min)': ['Velocidad', 'Velocidad (m/min)', 'Vel'],
   'Kgs Producidos':     ['Kgs', 'Produccion', 'Kg Producidos'],
@@ -233,9 +233,9 @@ const ALIASES = {
   'P. Gruesas':         ['P Gruesas', 'Gruesas', 'PGruesas'],
   'P. Delgadas':        ['P Delgadas', 'Delgadas', 'PDelgadas'],
   '% Tiempo Perdido':   ['% Tiempo', 'Tiempo Perdido', 'Tiempo'],
-  'RxMHH Purgador':     ['Rx MHH Purgador', 'RxMHH-Purgador', 'Rx MHH-Purgador'],
-  'RxMHH Naturales':    ['Rx MHH Naturales', 'RxMHH-Naturales', 'Rx MHH-Naturales'],
-  'Husos Inactivos':    ['Husos Inact', 'Husos Inact.', 'HusosInactivos', 'Husos Inactivos'],
+  'RxMHH Purgador':     ['Rx MHH Purgador','RxMHH-Purgador','Purgador RxMHH','Purgador Rx MHH','Purgador','Roturas Purgador','RxMHH_Purgador','rxmhh purgador'],
+  'RxMHH Naturales':    ['Rx MHH Naturales','RxMHH-Naturales','Naturales RxMHH','Naturales Rx MHH','Naturales','Roturas Naturales','RxMHH_Naturales','rxmhh naturales'],
+  'Husos Inactivos':    ['Husos Inact','Husos Inact.','HusosInactivos','Husos Inactivos'],
 };
 function campo(row, nombre) {
   if (!row) return '';
@@ -404,14 +404,31 @@ function renderMaquinas() {
   $('kpiT1').textContent = t1.toLocaleString('es-ES',{maximumFractionDigits:2});
   $('kpiT2').textContent = t2.toLocaleString('es-ES',{maximumFractionDigits:2});
   $('kpiT3').textContent = t3.toLocaleString('es-ES',{maximumFractionDigits:2});
-  $('tbodyMaquinas').innerHTML = produccionData.map(r => `
+
+  // Lee RxMHH: primero del CSV de producción; si no existe, agrega desde Sisgo.
+  function rxDe(maquina, campoNombre) {
+    const prodRow = produccionData.find(r => campo(r,'Maquina') === maquina);
+    if (prodRow) {
+      const v = campo(prodRow, campoNombre);
+      if (v !== '' && v !== undefined && v !== null && v !== '-') return v;
+    }
+    const filas = sisgoData.filter(r => campo(r,'Maquina') === maquina);
+    if (!filas.length) return '';
+    const total = filas.reduce((s,r) => s + num(campo(r, campoNombre)), 0);
+    if (total === 0) return '';
+    return total.toLocaleString('es-ES', {maximumFractionDigits:2});
+  }
+
+  $('tbodyMaquinas').innerHTML = produccionData.map(r => {
+    const maq = campo(r,'Maquina');
+    return `
     <tr>
-      <td class="nombre-col">${campo(r,'Maquina')}</td>
+      <td class="nombre-col">${maq}</td>
       <td>${campo(r,'Titulo')}</td>
       <td>${campo(r,'Tipo')}</td>
       <td>${campo(r,'Husos Inactivos')}</td>
-      <td>${campo(r,'RxMHH Purgador')}</td>
-      <td>${campo(r,'RxMHH Naturales')}</td>
+      <td>${rxDe(maq,'RxMHH Purgador')}</td>
+      <td>${rxDe(maq,'RxMHH Naturales')}</td>
       <td>${num(campo(r,'Kgs 1er Turno')).toLocaleString('es-ES',{maximumFractionDigits:2})}</td>
       <td style="color:#00e676;">${num(campo(r,'Efic 1er Turno (%)')).toFixed(1)}%</td>
       <td>${num(campo(r,'Kgs 2do Turno')).toLocaleString('es-ES',{maximumFractionDigits:2})}</td>
@@ -419,7 +436,8 @@ function renderMaquinas() {
       <td>${num(campo(r,'Kgs 3er Turno')).toLocaleString('es-ES',{maximumFractionDigits:2})}</td>
       <td style="color:#00e676;">${num(campo(r,'Efic 3er Turno (%)')).toFixed(1)}%</td>
       <td style="color:#4fc3f7;font-weight:700;">${num(campo(r,'Kgs Total')).toLocaleString('es-ES',{maximumFractionDigits:2})}</td>
-    </tr>`).join('') || filaVacia(13);
+    </tr>`;
+  }).join('') || filaVacia(13);
 }
 
 function renderTurnos() {
