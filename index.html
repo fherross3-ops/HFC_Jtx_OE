@@ -56,12 +56,6 @@
     padding:12px 16px;color:#f06292;font-size:.8rem;margin-bottom:8px;display:none;line-height:1.6;}
   .error.visible{display:block;}
   .error code{background:#0a0e17;padding:1px 5px;border-radius:4px;color:#ffb74d;font-size:.75rem;}
-  .debug-panel{background:#0a121c;border:1px solid #1e3347;border-radius:10px;
-    padding:10px 14px;font-size:.7rem;color:#78909c;margin-bottom:8px;display:none;
-    max-height:240px;overflow:auto;font-family:ui-monospace,monospace;line-height:1.6;}
-  .debug-panel.visible{display:block;}
-  .debug-ok{color:#00e676;}
-  .debug-err{color:#f06292;}
 </style>
 </head>
 <body>
@@ -78,7 +72,6 @@
       <select id="carpetaSelect" title="Carpeta / período"><option>Cargando carpetas…</option></select>
       <select id="fechaSelect" title="Fecha"><option>Cargando fechas…</option></select>
       <span class="fecha-destacada" id="fechaMostrada">—</span>
-      <button class="btn-mini" id="btnDebug" title="Ver URLs probadas">🔍 Diagnóstico</button>
       <button class="btn-mini" id="btnReload" title="Recargar">↻</button>
     </div>
     <div id="fileStatus" style="font-size:.7rem;color:#90aae4;">Iniciando…</div>
@@ -94,7 +87,6 @@
   </div>
 
   <div class="error" id="errorPanel"></div>
-  <div class="debug-panel" id="debugPanel"></div>
 
   <div class="tab-content active" id="tab-global">
     <div class="kpis">
@@ -174,12 +166,11 @@
 const DATA_PATH = 'data/raw/';
 const EXT = '.csv';
 
-let CARPETAS = [];            // todas las carpetas de index.json
-let CARPETA_ACTUAL = null;    // objeto {nombre, rango, sisgo_csv, produccion, tiempos_perdidos}
+let CARPETAS = [];
+let CARPETA_ACTUAL = null;
 let produccionData = [];
 let tiemposData = [];
 let sisgoData = [];
-let debugInfo = [];
 
 const $ = id => document.getElementById(id);
 
@@ -289,29 +280,23 @@ async function fetchFirst(urls) {
       const r = await fetch(u + sep + 't=' + Date.now(), { cache: 'no-store' });
       if (r.ok) {
         const txt = await r.text();
-        if (txt && txt.trim()) { debugInfo.push('OK    ' + u); return txt; }
-        debugInfo.push('EMPTY ' + u);
-      } else {
-        debugInfo.push('404   ' + u);
+        if (txt && txt.trim()) return txt;
       }
-    } catch (e) {
-      debugInfo.push('ERR   ' + u);
-    }
+    } catch (e) {}
   }
   return null;
 }
 
-/* ---------- CARGA INDEX (lista de carpetas) ---------- */
+/* ---------- CARGA INDEX ---------- */
 async function cargarIndex() {
   const r = await fetch(DATA_PATH + 'index.json?t=' + Date.now(), { cache: 'no-store' });
   if (!r.ok) throw new Error('No se encontró ' + DATA_PATH + 'index.json');
   const data = await r.json();
   if (!data.carpetas || !data.carpetas.length) throw new Error('index.json no tiene carpetas');
-  // ordenar por rango descendente → la más reciente primero
   return [...data.carpetas].sort((a, b) => (b.rango || '').localeCompare(a.rango || ''));
 }
 
-/* ---------- CARGA UNA CARPETA (repuebla fechas y carga la primera) ---------- */
+/* ---------- CARGA UNA CARPETA ---------- */
 async function cargarCarpeta(carpeta) {
   CARPETA_ACTUAL = carpeta;
   $('errorPanel').classList.remove('visible');
@@ -339,12 +324,11 @@ async function cargarCarpeta(carpeta) {
   await cargarFecha(fechas[0]);
 }
 
-/* ---------- CARGA DATOS DE UNA FECHA (dentro de la carpeta actual) ---------- */
+/* ---------- CARGA DATOS DE UNA FECHA ---------- */
 async function cargarFecha(fecha) {
   if (!CARPETA_ACTUAL) return;
   const base = `${DATA_PATH}${CARPETA_ACTUAL.nombre}/`;
 
-  debugInfo = [];
   $('fileStatus').textContent = `Cargando ${fechaStr(fecha)}…`;
   $('errorPanel').classList.remove('visible');
 
@@ -368,8 +352,8 @@ async function cargarFecha(fecha) {
   sisgoData = [];
   if (CARPETA_ACTUAL.sisgo_csv) {
     const sisgoText = await fetchFirst([
-      `${base}${CARPETA_ACTUAL.sisgo_csv}`,                 // dentro de la carpeta (recomendado)
-      `${DATA_PATH}${CARPETA_ACTUAL.sisgo_csv}`,            // fallback: junto a index.json
+      `${base}${CARPETA_ACTUAL.sisgo_csv}`,
+      `${DATA_PATH}${CARPETA_ACTUAL.sisgo_csv}`,
     ]);
     sisgoData = sisgoText ? parseCSV(sisgoText) : [];
   }
@@ -379,8 +363,7 @@ async function cargarFecha(fecha) {
 
   if (!produccionData.length && !tiemposData.length && !sisgoData.length) {
     $('errorPanel').innerHTML =
-      `⚠️ <b>No se cargó ningún CSV</b> para ${fechaStr(fecha)} en <code>${CARPETA_ACTUAL.nombre}</code>.<br>
-       Pulsa <b>🔍 Diagnóstico</b> para ver las URLs probadas (404/OK).`;
+      `⚠️ <b>No se cargó ningún CSV</b> para ${fechaStr(fecha)} en <code>${CARPETA_ACTUAL.nombre}</code>.`;
     $('errorPanel').classList.add('visible');
   }
 
@@ -587,32 +570,18 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
   });
 });
 
-/* ---------- DEBUG ---------- */
-$('btnDebug').addEventListener('click', () => {
-  const p = $('debugPanel');
-  p.classList.toggle('visible');
-  if (p.classList.contains('visible')) {
-    p.innerHTML = debugInfo.length
-      ? debugInfo.map(d => `<div class="${d.startsWith('OK') ? 'debug-ok' : 'debug-err'}">${d}</div>`).join('')
-      : '<div>Sin información todavía. Cambia de fecha/carpeta primero.</div>';
-  }
-});
-
 /* ---------- ARRANQUE ---------- */
 async function arrancar() {
   const overlay = $('loading');
   try {
     CARPETAS = await cargarIndex();
 
-    // 1) Popular selector de carpeta
     $('carpetaSelect').innerHTML = CARPETAS.map((c, i) =>
       `<option value="${i}">${etiquetaCarpeta(c)}</option>`).join('');
     $('carpetaSelect').value = '0';
 
-    // 2) Cargar la primera carpeta
     await cargarCarpeta(CARPETAS[0]);
 
-    // 3) Cambio de carpeta → repuebla fechas y recarga
     $('carpetaSelect').addEventListener('change', async function() {
       const idx = parseInt(this.value, 10);
       const c = CARPETAS[idx];
@@ -622,7 +591,6 @@ async function arrancar() {
       overlay.classList.add('hidden');
     });
 
-    // 4) Cambio de fecha → recarga dentro de la carpeta actual
     $('fechaSelect').addEventListener('change', async function() {
       if (!this.value) return;
       overlay.classList.remove('hidden');
@@ -630,7 +598,6 @@ async function arrancar() {
       overlay.classList.add('hidden');
     });
 
-    // 5) Botón recargar
     $('btnReload').addEventListener('click', async () => {
       overlay.classList.remove('hidden');
       await cargarFecha($('fechaSelect').value);
