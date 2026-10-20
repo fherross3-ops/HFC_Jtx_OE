@@ -42,7 +42,7 @@
   .kpi-value.pink{color:#f06292;}
   table{width:100%;border-collapse:collapse;font-size:.8rem;background:#0a121c;border-radius:10px;overflow:hidden;}
   th{background:#0f1a2b;color:#78909c;padding:10px;text-align:center;
-    border-bottom:2px solid #1e3347;font-size:.7rem;text-transform:uppercase;}
+    border-bottom:2px solid #1e3347;font-size:.7rem;text-transform:uppercase;white-space:nowrap;}
   td{padding:8px 10px;text-align:center;border-bottom:1px solid #142230;color:#b0bec5;}
   tr:hover td{background:#142230;}
   .nombre-col{font-weight:600;color:#4fc3f7;text-align:left;}
@@ -101,8 +101,13 @@
       <div class="kpi"><div class="kpi-label">Kgs 2do Turno</div><div class="kpi-value orange" id="kpiT2">-</div></div>
       <div class="kpi"><div class="kpi-label">Kgs 3er Turno</div><div class="kpi-value pink" id="kpiT3">-</div></div>
     </div>
-    <table><thead><tr><th>Máquina</th><th>Kgs T1</th><th>Efic T1</th>
-      <th>Kgs T2</th><th>Efic T2</th><th>Kgs T3</th><th>Efic T3</th><th>Total</th></tr></thead>
+    <table><thead><tr>
+      <th>Máquina</th><th>Título</th><th>Tipo</th><th>Husos Inact.</th>
+      <th>RxMHH Purgador</th><th>RxMHH Naturales</th>
+      <th>Kgs T1</th><th>Efic T1</th>
+      <th>Kgs T2</th><th>Efic T2</th>
+      <th>Kgs T3</th><th>Efic T3</th><th>Total</th>
+    </tr></thead>
       <tbody id="tbodyMaquinas"></tbody></table>
   </div>
 
@@ -202,7 +207,7 @@ function parseCSV(text) {
   return result;
 }
 
-/* ---------- NÚMEROS ---------- */
+/* ---------- NÚMEROS (acepta coma decimal) ---------- */
 function num(v) {
   if (typeof v === 'number') return v;
   let s = String(v ?? '').trim();
@@ -220,7 +225,7 @@ function num(v) {
   return isNaN(n) ? 0 : n;
 }
 
-/* ---------- COLUMNAS case-insensitive ---------- */
+/* ---------- ACCESO A COLUMNAS (sin tildes, case-insensitive) ---------- */
 const ALIASES = {
   'Velocidad (mt/min)': ['Velocidad', 'Velocidad (m/min)', 'Vel'],
   'Kgs Producidos':     ['Kgs', 'Produccion', 'Kg Producidos'],
@@ -228,11 +233,16 @@ const ALIASES = {
   'P. Gruesas':         ['P Gruesas', 'Gruesas', 'PGruesas'],
   'P. Delgadas':        ['P Delgadas', 'Delgadas', 'PDelgadas'],
   '% Tiempo Perdido':   ['% Tiempo', 'Tiempo Perdido', 'Tiempo'],
+  'RxMHH Purgador':     ['Rx MHH Purgador', 'RxMHH-Purgador', 'Rx MHH-Purgador'],
+  'RxMHH Naturales':    ['Rx MHH Naturales', 'RxMHH-Naturales', 'Rx MHH-Naturales'],
+  'Husos Inactivos':    ['Husos Inact', 'Husos Inact.', 'HusosInactivos', 'Husos Inactivos'],
 };
 function campo(row, nombre) {
   if (!row) return '';
   if (nombre in row) return row[nombre];
-  const norm = s => String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
+  const norm = s => String(s).toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]/g, '');
   const target = norm(nombre);
   for (const k in row) if (norm(k) === target) return row[k];
   for (const al of (ALIASES[nombre] || [])) {
@@ -397,6 +407,11 @@ function renderMaquinas() {
   $('tbodyMaquinas').innerHTML = produccionData.map(r => `
     <tr>
       <td class="nombre-col">${campo(r,'Maquina')}</td>
+      <td>${campo(r,'Titulo')}</td>
+      <td>${campo(r,'Tipo')}</td>
+      <td>${campo(r,'Husos Inactivos')}</td>
+      <td>${campo(r,'RxMHH Purgador')}</td>
+      <td>${campo(r,'RxMHH Naturales')}</td>
       <td>${num(campo(r,'Kgs 1er Turno')).toLocaleString('es-ES',{maximumFractionDigits:2})}</td>
       <td style="color:#00e676;">${num(campo(r,'Efic 1er Turno (%)')).toFixed(1)}%</td>
       <td>${num(campo(r,'Kgs 2do Turno')).toLocaleString('es-ES',{maximumFractionDigits:2})}</td>
@@ -404,7 +419,7 @@ function renderMaquinas() {
       <td>${num(campo(r,'Kgs 3er Turno')).toLocaleString('es-ES',{maximumFractionDigits:2})}</td>
       <td style="color:#00e676;">${num(campo(r,'Efic 3er Turno (%)')).toFixed(1)}%</td>
       <td style="color:#4fc3f7;font-weight:700;">${num(campo(r,'Kgs Total')).toLocaleString('es-ES',{maximumFractionDigits:2})}</td>
-    </tr>`).join('') || filaVacia(8);
+    </tr>`).join('') || filaVacia(13);
 }
 
 function renderTurnos() {
