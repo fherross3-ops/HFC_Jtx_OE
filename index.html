@@ -52,6 +52,33 @@
   .spinner{width:44px;height:44px;border:4px solid #1e3347;border-top-color:#4fc3f7;
     border-radius:50%;animation:spin 1s linear infinite;}
   @keyframes spin{to{transform:rotate(360deg);}}
+
+  /* ── Cumplimiento mensual ── */
+  .cumplimiento-section{background:linear-gradient(135deg,#0f1a2b 0%,#152a40 100%);
+    border:1px solid #2a5a7a;border-radius:12px;padding:14px 18px;margin-bottom:12px;
+    border-left:4px solid #ffb74d;}
+  .cumplimiento-header{display:flex;justify-content:space-between;align-items:center;
+    margin-bottom:10px;flex-wrap:wrap;gap:8px;}
+  .cumplimiento-header h2{font-size:.9rem;color:#ffb74d;font-weight:700;letter-spacing:.03em;}
+  .cumplimiento-mes{background:#1b3a4b;color:#4fc3f7;padding:3px 12px;border-radius:60px;
+    font-size:.75rem;font-weight:700;}
+  .cumplimiento-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+    gap:8px;margin-bottom:10px;}
+  .cumplimiento-kpis .kpi{border-left-color:#ffb74d;}
+  .cumplimiento-kpis .kpi:nth-child(2){border-left-color:#78909c;}
+  .cumplimiento-kpis .kpi:nth-child(3){border-left-color:#00e676;}
+  .cumplimiento-kpis .kpi:nth-child(4){border-left-color:#4fc3f7;}
+  .progress-wrap{display:flex;flex-direction:column;gap:6px;}
+  .progress-bar{height:14px;background:#0a121c;border-radius:8px;overflow:hidden;
+    border:1px solid #1e3347;position:relative;}
+  .progress-fill{height:100%;width:0%;background:linear-gradient(90deg,#f06292,#ffb74d);
+    transition:width .4s ease;}
+  .progress-marker{position:absolute;top:-2px;bottom:-2px;width:2px;background:#ffffff;
+    box-shadow:0 0 6px rgba(255,255,255,.8);z-index:2;transition:left .4s ease;
+    border-radius:2px;}
+  .progress-labels{display:flex;justify-content:space-between;font-size:.7rem;
+    color:#78909c;gap:8px;flex-wrap:wrap;}
+  .progress-labels span:nth-child(2){color:#90aae4;text-align:right;}
 </style>
 </head>
 <body>
@@ -83,6 +110,32 @@
   </div>
 
   <div class="tab-content active" id="tab-global">
+
+    <!-- ── Cumplimiento Mensual · Planificación ── -->
+    <div class="cumplimiento-section">
+      <div class="cumplimiento-header">
+        <h2>🎯 Cumplimiento Mensual · Planificación</h2>
+        <span class="cumplimiento-mes" id="cumplimientoMes">—</span>
+      </div>
+      <div class="cumplimiento-kpis">
+        <div class="kpi"><div class="kpi-label">Kgs Acumulados Mes</div><div class="kpi-value" id="kpiCumpAcum">—</div></div>
+        <div class="kpi"><div class="kpi-label">Meta Mensual</div><div class="kpi-value" id="kpiCumpMeta">—</div></div>
+        <div class="kpi"><div class="kpi-label">% Cumplimiento</div><div class="kpi-value" id="kpiCumpPct">—</div></div>
+        <div class="kpi"><div class="kpi-label">Proyección Cierre</div><div class="kpi-value" id="kpiCumpProy">—</div></div>
+      </div>
+      <div class="progress-wrap">
+        <div class="progress-bar">
+          <div class="progress-fill" id="progressFill"></div>
+          <div class="progress-marker" id="progressMarker" style="left:0%"></div>
+        </div>
+        <div class="progress-labels">
+          <span id="progressActual">—</span>
+          <span id="progressTiempo">—</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- KPIs diarios -->
     <div class="kpis">
       <div class="kpi"><div class="kpi-label">Kgs Total Día</div><div class="kpi-value" id="kpiKgs">-</div></div>
       <div class="kpi"><div class="kpi-label">Eficiencia Prom.</div><div class="kpi-value green" id="kpiEfic">-</div></div>
@@ -165,11 +218,19 @@
 const DATA_PATH = 'data/raw/';
 const EXT = '.csv';
 
+/* ─── Meta mensual exigida por Planificación ─── */
+const META_MENSUAL_KGS = 327161;
+
 let CARPETAS = [];
 let CARPETA_ACTUAL = null;
 let produccionData = [];
 let tiemposData = [];
 let sisgoData = [];
+
+/* Cachés de cálculo mensual */
+const cacheKgsFecha = {};   // "folder|YYYYMMDD" -> kgs
+const cacheMes = {};        // "YYYYMM" -> kgsAcumulado
+let calcToken = 0;          // token para descartar cálculos obsoletos
 
 const $ = id => document.getElementById(id);
 
@@ -225,7 +286,7 @@ function num(v) {
   return isNaN(n) ? 0 : n;
 }
 
-/* ---------- COLUMNAS case-insensitive, sin tildes ---------- */
+/* ---------- COLUMNAS ---------- */
 const ALIASES = {
   'Velocidad (mt/min)': ['Velocidad', 'Velocidad (m/min)', 'Vel'],
   'Kgs Producidos':     ['Kgs', 'Produccion', 'Kg Producidos'],
@@ -289,6 +350,12 @@ async function fetchFirst(urls) {
     } catch (e) {}
   }
   return null;
+}
+
+/* ---------- INVALIDAR CACHÉS ---------- */
+function invalidarCaches() {
+  Object.keys(cacheKgsFecha).forEach(k => delete cacheKgsFecha[k]);
+  Object.keys(cacheMes).forEach(k => delete cacheMes[k]);
 }
 
 /* ---------- CARGA INDEX ---------- */
@@ -362,8 +429,114 @@ async function cargarFecha(fecha) {
   $('fileStatus').textContent =
     `Prod: ${produccionData.length} | Tiempos: ${tiemposData.length} | Sisgo: ${sisgoData.length}`;
 
+  // Cachear kgs de esta fecha (para no volver a descargarla al calcular el mes)
+  const kgs = produccionData.reduce((s,r) => s + num(campo(r,'Kgs Total')), 0);
+  cacheKgsFecha[`${CARPETA_ACTUAL.nombre}|${fecha}`] = kgs;
+
   $('fechaMostrada').textContent = fechaStr(fecha);
   render(fecha);
+  renderCumplimiento(fecha).catch(console.error);
+}
+
+/* ---------- KGS DE UNA FECHA (con caché) ---------- */
+async function kgsDeFecha(nombreCarpeta, fecha) {
+  const key = `${nombreCarpeta}|${fecha}`;
+  if (key in cacheKgsFecha) return cacheKgsFecha[key];
+
+  // Si es la fecha/carpeta actualmente cargada, usa memoria
+  if (CARPETA_ACTUAL && CARPETA_ACTUAL.nombre === nombreCarpeta &&
+      $('fechaSelect').value === fecha && produccionData.length) {
+    const kgs = produccionData.reduce((s,r) => s + num(campo(r,'Kgs Total')), 0);
+    cacheKgsFecha[key] = kgs;
+    return kgs;
+  }
+
+  const base = `${DATA_PATH}${nombreCarpeta}/`;
+  const txt = await fetchFirst([
+    `${base}cvss/produccion_hfc_${fecha}${EXT}`,
+    `${base}produccion_hfc_${fecha}${EXT}`,
+  ]);
+  const kgs = txt ? parseCSV(txt).reduce((s,r) => s + num(campo(r,'Kgs Total')), 0) : 0;
+  cacheKgsFecha[key] = kgs;
+  return kgs;
+}
+
+/* ---------- CUMPLIMIENTO MENSUAL ---------- */
+async function renderCumplimiento(fecha) {
+  if (!fecha || fecha.length !== 8) return;
+  const myToken = ++calcToken;
+
+  const anio = fecha.slice(0,4);
+  const mes  = fecha.slice(4,6);
+  const claveMes = anio + mes;
+  const diaSeleccionado = parseInt(fecha.slice(6,8), 10) || 1;
+  const ultimoDia = new Date(parseInt(anio), parseInt(mes), 0).getDate();
+
+  const nombresMes = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio',
+                      'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  $('cumplimientoMes').textContent = `${nombresMes[parseInt(mes, 10)]} ${anio}`;
+  $('kpiCumpMeta').textContent = META_MENSUAL_KGS.toLocaleString('es-ES') + ' kg';
+
+  let acumulado;
+  if (claveMes in cacheMes) {
+    acumulado = cacheMes[claveMes];
+  } else {
+    // Placeholder mientras carga
+    $('kpiCumpAcum').textContent = 'Calculando…';
+    $('kpiCumpAcum').style.color = '#78909c';
+    $('kpiCumpPct').textContent  = '…';
+    $('kpiCumpProy').textContent = '…';
+
+    const tareas = [];
+    for (const c of CARPETAS) {
+      for (const f of (c.produccion || [])) {
+        if (f.startsWith(claveMes)) tareas.push(kgsDeFecha(c.nombre, f));
+      }
+    }
+    const valores = await Promise.all(tareas);
+    if (myToken !== calcToken) return; // cálculo obsoleto, descartar
+    acumulado = valores.reduce((a,b) => a+b, 0);
+    cacheMes[claveMes] = acumulado;
+  }
+
+  const pct = META_MENSUAL_KGS > 0 ? (acumulado / META_MENSUAL_KGS * 100) : 0;
+  const proyeccion = (acumulado / diaSeleccionado) * ultimoDia;
+  const pctTiempo = (diaSeleccionado / ultimoDia) * 100;
+
+  $('kpiCumpAcum').textContent = acumulado.toLocaleString('es-ES', {maximumFractionDigits: 0}) + ' kg';
+  $('kpiCumpPct').textContent  = pct.toFixed(1) + '%';
+  $('kpiCumpProy').textContent = proyeccion.toLocaleString('es-ES', {maximumFractionDigits: 0}) + ' kg';
+
+  // Colores
+  const elAcum = $('kpiCumpAcum');
+  const elPct  = $('kpiCumpPct');
+  const elProy = $('kpiCumpProy');
+  [elAcum, elPct, elProy].forEach(el => el.style.color = '');
+  elAcum.style.color = '#4fc3f7';
+
+  if (pct >= 100)      elPct.style.color = '#00e676';
+  else if (pct >= 80)  elPct.style.color = '#ffb74d';
+  else                 elPct.style.color = '#f06292';
+
+  if (proyeccion >= META_MENSUAL_KGS)            elProy.style.color = '#00e676';
+  else if (proyeccion >= META_MENSUAL_KGS * 0.9) elProy.style.color = '#ffb74d';
+  else                                            elProy.style.color = '#f06292';
+
+  // Barra de progreso
+  $('progressFill').style.width = Math.min(pct, 100).toFixed(1) + '%';
+  $('progressFill').style.background = pct >= 100
+    ? 'linear-gradient(90deg, #00e676, #4fc3f7)'
+    : pct >= 80
+      ? 'linear-gradient(90deg, #ffb74d, #00e676)'
+      : 'linear-gradient(90deg, #f06292, #ffb74d)';
+
+  // Marcador de tiempo transcurrido
+  $('progressMarker').style.left = Math.min(pctTiempo, 100).toFixed(1) + '%';
+
+  $('progressActual').textContent =
+    `${acumulado.toLocaleString('es-ES', {maximumFractionDigits: 0})} kg · ${pct.toFixed(1)}% de la meta`;
+  $('progressTiempo').textContent =
+    `Día ${diaSeleccionado} de ${ultimoDia} · ${pctTiempo.toFixed(1)}% del mes`;
 }
 
 /* ---------- RENDER ---------- */
@@ -372,7 +545,6 @@ function render(fecha) {
   renderCalidad(fecha); renderOperadores(); renderTiempos();
 }
 
-/* ---------- TÍTULO reconstruido (Ne + Esp) ---------- */
 function tituloDe(prodRow) {
   const t = campo(prodRow, 'Titulo');
   if (t) return t;
@@ -381,9 +553,7 @@ function tituloDe(prodRow) {
   return esp ? `${ne} ${esp}` : ne;
 }
 
-/* ---------- RxMHH: lee de Sisgo y suma los turnos ---------- */
 function rxDe(prodRow, campoNombre, fecha) {
-  // Si existiera en producción, se usa
   const directo = campo(prodRow, campoNombre);
   if (directo !== '' && directo !== undefined && directo !== null && directo !== '-') {
     return directo;
@@ -403,7 +573,6 @@ function rxDe(prodRow, campoNombre, fecha) {
   return total.toLocaleString('es-ES', {maximumFractionDigits:2});
 }
 
-/* ---------- RENDER GLOBAL ---------- */
 function renderGlobal() {
   const totalKgs = produccionData.reduce((s,r) => s + num(campo(r,'Kgs Total')), 0);
   const activas  = produccionData.filter(r => num(campo(r,'Kgs Total')) > 0).length;
@@ -428,7 +597,6 @@ function renderGlobal() {
     </tr>`).join('') || filaVacia(7);
 }
 
-/* ---------- RENDER MAQUINAS (con RxMHH desde Sisgo) ---------- */
 function renderMaquinas(fecha) {
   const t1 = produccionData.reduce((s,r) => s + num(campo(r,'Kgs 1er Turno')), 0);
   const t2 = produccionData.reduce((s,r) => s + num(campo(r,'Kgs 2do Turno')), 0);
@@ -456,7 +624,6 @@ function renderMaquinas(fecha) {
     </tr>`).join('') || filaVacia(13);
 }
 
-/* ---------- RENDER TURNOS ---------- */
 function renderTurnos() {
   const turnos = ['1er','2do','3er'];
   const totales = turnos.map(t => ({
@@ -480,7 +647,6 @@ function renderTurnos() {
     </tr>`).join('');
 }
 
-/* ---------- RENDER CALIDAD ---------- */
 function renderCalidad(fecha) {
   const delDia = sisgoData.filter(r => normalizarFechaCSV(campo(r,'fecha')) === fecha);
   $('kpiCalidadRegs').textContent = delDia.length;
@@ -513,7 +679,6 @@ function renderCalidad(fecha) {
     </tr>`).join('');
 }
 
-/* ---------- RENDER OPERADORES ---------- */
 function renderOperadores() {
   if (!sisgoData.length) {
     $('tbodyOperadores').innerHTML = `<tr><td colspan="8" style="text-align:center;padding:30px;color:#78909c;">Sin datos</td></tr>`;
@@ -563,7 +728,6 @@ function renderOperadores() {
     </tr>`).join('');
 }
 
-/* ---------- RENDER TIEMPOS ---------- */
 function renderTiempos() {
   const total = tiemposData.reduce((s,r) => s + num(campo(r,'Horas')), 0);
   const causas = new Set(tiemposData.map(r => campo(r,'Causa')));
@@ -633,6 +797,7 @@ async function arrancar() {
       const c = CARPETAS[idx];
       if (!c) return;
       overlay.classList.remove('hidden');
+      invalidarCaches();          // carpeta distinta → recalcular mes
       await cargarCarpeta(c);
       overlay.classList.add('hidden');
     });
@@ -646,6 +811,7 @@ async function arrancar() {
 
     $('btnReload').addEventListener('click', async () => {
       overlay.classList.remove('hidden');
+      invalidarCaches();          // forzar recálculo desde cero
       await cargarFecha($('fechaSelect').value);
       overlay.classList.add('hidden');
     });
