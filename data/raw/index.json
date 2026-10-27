@@ -3,11 +3,11 @@
   "generado": "2026-10-27T11:35:20",
   "carpetas": [
     {
-      "nombre": "hilanderia_open_completo_20261001_20261020",
-      "rango": "20261001_20261020",
+      "nombre": "hilanderia_open_completo_20261001_20261026",
+      "rango": "20261001_20261026",
       "fecha_inicio": "20261001",
-      "fecha_fin": "20261020",
-      "sisgo_csv": "hilanderia_open_20261001_20261022.csv",
+      "fecha_fin": "20261026",
+      "sisgo_csv": "hilanderia_open_20261001_20261026.csv",
       "produccion": [
         "20261001",
         "20261002",
@@ -50,10 +50,10 @@
       ]
     },
     {
-      "nombre": "hilanderia_open_completo_20261001_20261021",
-      "rango": "20261001_20261021",
+      "nombre": "hilanderia_open_completo_20261001_20261026",
+      "rango": "20261001_20261026",
       "fecha_inicio": "20261001",
-      "fecha_fin": "20261021",
+      "fecha_fin": "20261026",
       "sisgo_csv": null,
       "produccion": [
         "20261001",
